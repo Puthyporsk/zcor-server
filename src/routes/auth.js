@@ -1,10 +1,11 @@
 // routes/auth.js
 import { Router } from "express";
-import slugify from "slugify";
 import User from "../models/User.js";
 import requireAuth from "../middleware/requireAuth.js";
 import { signAccessToken } from "../utils/jwt.js";
+import { sendPasswordResetEmail } from "../utils/utils.js";
 import { badRequest, conflict, unauthorized } from "../utils/httpError.js";
+import { createHash } from "crypto";
 
 const router = Router();
 const COOKIE_NAME = process.env.COOKIE_NAME || "auth_token";
@@ -143,7 +144,7 @@ router.get("/me", requireAuth, async (req, res) => {
 
 /**
  * POST /api/auth/forgot-password
- * Body: { email, businessSlug? }
+ * Body: { email }
  * Always returns 200 so attackers can’t enumerate emails.
  * In development, returns resetToken for testing.
  */
@@ -161,8 +162,21 @@ router.post("/forgot-password", async (req, res, next) => {
     let resetToken = null;
     if (user) {
       resetToken = user.createPasswordResetToken(30);
-      await user.save();
-      // TODO: send email with resetToken
+      await user.save({ validateBeforeSave: false });
+      
+      const base = process.env.FRONTEND_URL || "http://localhost:3000";
+      const resetUrl = `${base}/reset-password?token=${encodeURIComponent(resetToken)}`;
+
+      try {
+        await sendPasswordResetEmail({ to: emailNorm, resetUrl });
+      } catch (mailErr) {
+        // Important: if email fails, invalidate token so you don't leave a live token in DB
+        user.passwordReset = undefined;
+        await user.save({ validateBeforeSave: false });
+
+        // You can log mailErr internally for debugging
+        console.error("sendPasswordResetEmail failed:", mailErr);
+      }
     }
 
     const payload = { message: "If the account exists, password reset instructions were sent." };
@@ -171,6 +185,48 @@ router.post("/forgot-password", async (req, res, next) => {
     }
 
     res.json(payload);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/reset-password?token=<token>
+ * Body: { token, newPassword }
+ */
+router.post("/reset-password", async (req, res, next) => {
+  try {
+    const { token, newPassword } = req.body || {};
+
+    if (!token || !newPassword) {
+      throw badRequest("token and newPassword are required");
+    }
+    if (String(newPassword).length < 8) {
+      throw badRequest("newPassword must be at least 8 characters");
+    }
+
+    const tokenHash = createHash("sha256").update(String(token)).digest("hex");
+
+    // Find by tokenHash AND not expired
+    const user = await User.findOne({
+      "passwordReset.tokenHash": tokenHash,
+      "passwordReset.expiresAt": { $gt: new Date() },
+    }).select("+passwordReset.tokenHash +passwordReset.expiresAt");
+
+    if (!user) throw badRequest("Invalid reset token");
+
+    // Set password (must hash via schema hook)
+    user.password = String(newPassword);
+
+    // One-time use: clear token
+    user.passwordReset = undefined;
+
+    // Optional: activate invited users
+    if (user.status === "invited") user.status = "active";
+
+    await user.save();
+
+    res.json({ message: "Password has been reset successfully." });
   } catch (err) {
     next(err);
   }
