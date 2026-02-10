@@ -1,7 +1,6 @@
 import mongoose, { model } from "mongoose";
 import { hash as _hash, compare } from "bcryptjs";
 import { randomBytes, createHash } from "crypto";
-import { type } from "os";
 
 const { Schema } = mongoose;
 const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/i;
@@ -73,10 +72,9 @@ UserSchema.virtual("password").set(function setPassword(pw) {
 // --- Middleware: hash password when provided ---
 UserSchema.pre("save", async function preSave(next) {
   try {
-    if (this._password) {
+    if (typeof this._password === "string" && this._password.length > 0) {
       const saltRounds = 12;
-      const hash = await _hash(this._password, saltRounds);
-      this.passwordHash = hash;
+      this.passwordHash = await _hash(this._password, saltRounds);
       this._password = undefined;
     }
     next();
