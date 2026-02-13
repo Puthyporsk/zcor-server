@@ -24,6 +24,11 @@ const UserSchema = new Schema(
         },
         phone: { type: String, trim: true, maxlength: 40 },
         avatarUrl: { type: String, trim: true, maxlength: 2048 },
+        avatar: {
+          data: { type: Buffer, select: false },
+          contentType: { type: String },
+          updatedAt: { type: Date },
+        },
 
         // Authorization
         role: {

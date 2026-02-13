@@ -15,6 +15,7 @@ dotenv.config();
 const app = express();
 app.set("view engine", "ejs");
 
+app.use(express.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(
@@ -34,7 +35,7 @@ app.get("/", (_req, res) => res.send("Hello World!"));
 
 // mount routes
 app.use("/api/auth", authRouter);
-app.use("/api/users", usersRouter);
+app.use("/api/user", usersRouter);
 // app.use("/api/time-entries", timeEntriesRouter);
 
 // error handler AFTER routes

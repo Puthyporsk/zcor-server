@@ -98,7 +98,7 @@ router.post("/login", async (req, res, next) => {
     const users = await User.find({
         userId: userId,
     }).select(
-      "+passwordHash role status email firstName lastName userId employeeMeta",
+      "+passwordHash role status email firstName lastName userId employeeMeta phone avatarUrl",
     );
 
     if (!users || users.length === 0) throw unauthorized("Invalid credentials");
@@ -119,7 +119,6 @@ router.post("/login", async (req, res, next) => {
 
     const token = signAccessToken(user);
     setAuthCookie(res, token);
-
     res.json({ user: userResponse(user) });
   } catch (err) {
     next(err);
