@@ -8,13 +8,14 @@ import cookieParser from "cookie-parser";
 import authenticate from "./src/middleware/authenticate.js";
 import authRouter from "./src/routes/auth.js";
 import usersRouter from "./src/routes/users.js";
-// import timeEntriesRouter from "./src/routes/timeEntries.js";
+import timeEntriesRouter from "./src/routes/timeEntries.js";
 
 dotenv.config();
 
 const app = express();
 app.set("view engine", "ejs");
 
+app.use(express.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
 app.use(
@@ -34,8 +35,8 @@ app.get("/", (_req, res) => res.send("Hello World!"));
 
 // mount routes
 app.use("/api/auth", authRouter);
-app.use("/api/users", usersRouter);
-// app.use("/api/time-entries", timeEntriesRouter);
+app.use("/api/user", usersRouter);
+app.use("/api/time-entries", timeEntriesRouter);
 
 // error handler AFTER routes
 app.use((err, _req, res, _next) => {
