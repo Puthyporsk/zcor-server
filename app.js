@@ -8,7 +8,7 @@ import cookieParser from "cookie-parser";
 import authenticate from "./src/middleware/authenticate.js";
 import authRouter from "./src/routes/auth.js";
 import usersRouter from "./src/routes/users.js";
-// import timeEntriesRouter from "./src/routes/timeEntries.js";
+import timeEntriesRouter from "./src/routes/timeEntries.js";
 
 dotenv.config();
 
@@ -36,7 +36,7 @@ app.get("/", (_req, res) => res.send("Hello World!"));
 // mount routes
 app.use("/api/auth", authRouter);
 app.use("/api/user", usersRouter);
-// app.use("/api/time-entries", timeEntriesRouter);
+app.use("/api/time-entries", timeEntriesRouter);
 
 // error handler AFTER routes
 app.use((err, _req, res, _next) => {

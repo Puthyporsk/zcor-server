@@ -35,6 +35,7 @@ function clearAuthCookie(res) {
 
 function userResponse(user) {
   return {
+    _id: user._id,
     firstName: user.firstName,
     lastName: user.lastName,
     userId: user.userId,
