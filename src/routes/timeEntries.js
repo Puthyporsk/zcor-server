@@ -11,8 +11,8 @@ const router = Router();
 function entryResponse(entry) {
     return {
         id:          entry._id,
-        project:     entry.project,
-        task:        entry.task,
+        project:     entry.project ? { id: entry.project._id, name: entry.project.name } : null,
+        task:        entry.task    ? { id: entry.task._id,    name: entry.task.name    } : null,
         description: entry.description || "",
         date:        entry.date,
         hours:       entry.hours,
@@ -81,6 +81,8 @@ router.get("/", requireAuth, async (req, res, next) => {
         const entries = await TimeEntry.find(filter)
             .populate("user", "firstName lastName userId")
             .populate("reviewedBy", "firstName lastName userId")
+            .populate("project", "name")
+            .populate("task", "name")
             .sort({ date: -1, createdAt: -1 });
 
         return res.json(entries.map(entryResponse));
@@ -92,16 +94,19 @@ router.get("/", requireAuth, async (req, res, next) => {
 /**
  * POST /api/time-entries
  * Create a new time entry (any authenticated user).
- * Body: { project, task, description?, date, hours, type? }
+ * Body: { projectId, taskId, description?, date, hours, type? }
  */
 router.post("/", requireAuth, async (req, res, next) => {
     try {
-        const { project, task, description, date, hours, type } = req.body || {};
+        const { projectId, taskId, description, date, hours, type } = req.body || {};
 
-        if (!project) throw badRequest("project is required");
-        if (!task)    throw badRequest("task is required");
-        if (!date)    throw badRequest("date is required");
+        if (!projectId) throw badRequest("projectId is required");
+        if (!taskId)    throw badRequest("taskId is required");
+        if (!date)      throw badRequest("date is required");
         if (hours === undefined || hours === null) throw badRequest("hours is required");
+
+        if (!mongoose.isValidObjectId(projectId)) throw badRequest("Invalid projectId");
+        if (!mongoose.isValidObjectId(taskId))    throw badRequest("Invalid taskId");
 
         const parsedHours = parseFloat(hours);
         if (isNaN(parsedHours) || parsedHours < 0.25 || parsedHours > 24) {
@@ -110,14 +115,16 @@ router.post("/", requireAuth, async (req, res, next) => {
 
         const entry = await TimeEntry.create({
             user:        req.user._id,
-            project:     String(project).trim(),
-            task:        String(task).trim(),
+            project:     projectId,
+            task:        taskId,
             description: description ? String(description).trim() : undefined,
             date:        new Date(date),
             hours:       parsedHours,
             type:        type || "billable",
         });
 
+        await entry.populate("project", "name");
+        await entry.populate("task", "name");
         return res.status(201).json(entryResponse(entry));
     } catch (err) {
         next(err);
@@ -135,7 +142,9 @@ router.get("/:id", requireAuth, async (req, res, next) => {
 
         const entry = await TimeEntry.findById(req.params.id)
             .populate("user", "firstName lastName userId")
-            .populate("reviewedBy", "firstName lastName userId");
+            .populate("reviewedBy", "firstName lastName userId")
+            .populate("project", "name")
+            .populate("task", "name");
 
         if (!entry) throw notFound("Entry not found");
 
@@ -171,10 +180,16 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
             throw badRequest("Only draft or rejected entries can be edited");
         }
 
-        const { project, task, description, date, hours, type } = req.body || {};
+        const { projectId, taskId, description, date, hours, type } = req.body || {};
 
-        if (project !== undefined) entry.project = String(project).trim();
-        if (task    !== undefined) entry.task    = String(task).trim();
+        if (projectId !== undefined) {
+            if (!mongoose.isValidObjectId(projectId)) throw badRequest("Invalid projectId");
+            entry.project = projectId;
+        }
+        if (taskId !== undefined) {
+            if (!mongoose.isValidObjectId(taskId)) throw badRequest("Invalid taskId");
+            entry.task = taskId;
+        }
         if (description !== undefined) entry.description = String(description).trim();
         if (date    !== undefined) entry.date    = new Date(date);
         if (type    !== undefined) entry.type    = type;
@@ -196,6 +211,8 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
         }
 
         await entry.save();
+        await entry.populate("project", "name");
+        await entry.populate("task", "name");
         return res.json(entryResponse(entry));
     } catch (err) {
         next(err);
@@ -287,6 +304,8 @@ router.patch("/:id/review", requireAuth, requireRole("owner", "manager"), async 
         await entry.save();
 
         await entry.populate("reviewedBy", "firstName lastName userId");
+        await entry.populate("project", "name");
+        await entry.populate("task", "name");
         return res.json(entryResponse(entry));
     } catch (err) {
         next(err);

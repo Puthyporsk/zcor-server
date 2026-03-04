@@ -9,6 +9,9 @@ import authenticate from "./src/middleware/authenticate.js";
 import authRouter from "./src/routes/auth.js";
 import usersRouter from "./src/routes/users.js";
 import timeEntriesRouter from "./src/routes/timeEntries.js";
+import tasksRouter from "./src/routes/tasks.js";
+import shiftsRouter from "./src/routes/shifts.js";
+import projectsRouter from "./src/routes/projects.js";
 
 dotenv.config();
 
@@ -37,6 +40,9 @@ app.get("/", (_req, res) => res.send("Hello World!"));
 app.use("/api/auth", authRouter);
 app.use("/api/user", usersRouter);
 app.use("/api/time-entries", timeEntriesRouter);
+app.use("/api/tasks", tasksRouter);
+app.use("/api/shifts", shiftsRouter);
+app.use("/api/projects", projectsRouter);
 
 // error handler AFTER routes
 app.use((err, _req, res, _next) => {
