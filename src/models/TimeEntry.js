@@ -13,8 +13,8 @@ const TimeEntrySchema = new Schema(
         },
 
         // Core entry fields
-        project: { type: String, trim: true, maxlength: 120, required: true },
-        task:    { type: String, trim: true, maxlength: 120, required: true },
+        project: { type: Schema.Types.ObjectId, ref: "Project", required: true },
+        task:    { type: Schema.Types.ObjectId, ref: "Task", required: true },
         description: { type: String, trim: true, maxlength: 1000 },
 
         // Work date — time component is ignored; treat as a local calendar date
