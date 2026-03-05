@@ -12,6 +12,8 @@ import timeEntriesRouter from "./src/routes/timeEntries.js";
 import tasksRouter from "./src/routes/tasks.js";
 import shiftsRouter from "./src/routes/shifts.js";
 import projectsRouter from "./src/routes/projects.js";
+import inventoryRouter from "./src/routes/inventory.js";
+import inventoryOrdersRouter from "./src/routes/inventoryOrders.js";
 
 dotenv.config();
 
@@ -43,6 +45,8 @@ app.use("/api/time-entries", timeEntriesRouter);
 app.use("/api/tasks", tasksRouter);
 app.use("/api/shifts", shiftsRouter);
 app.use("/api/projects", projectsRouter);
+app.use("/api/inventory", inventoryRouter);
+app.use("/api/inventory-orders", inventoryOrdersRouter);
 
 // error handler AFTER routes
 app.use((err, _req, res, _next) => {
