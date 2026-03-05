@@ -1,6 +1,7 @@
 import { Router } from "express";
 import mongoose from "mongoose";
 import TimeEntry from "../models/TimeEntry.js";
+import LeaveRequest from "../models/LeaveRequest.js";
 import requireAuth from "../middleware/requireAuth.js";
 import requireRole from "../middleware/requireRole.js";
 import { badRequest, forbidden, notFound } from "../utils/httpError.js";
@@ -113,12 +114,22 @@ router.post("/", requireAuth, async (req, res, next) => {
             throw badRequest("hours must be a number between 0.25 and 24");
         }
 
+        const entryDate = new Date(date);
+        const leaveOnDay = await LeaveRequest.findOne({
+            employee:  req.user._id,
+            status:    "approved",
+            type:      "vacation",
+            startDate: { $lte: entryDate },
+            endDate:   { $gte: entryDate },
+        });
+        if (leaveOnDay) throw badRequest("You have approved leave on this date and cannot log time entries");
+
         const entry = await TimeEntry.create({
             user:        req.user._id,
             project:     projectId,
             task:        taskId,
             description: description ? String(description).trim() : undefined,
-            date:        new Date(date),
+            date:        entryDate,
             hours:       parsedHours,
             type:        type || "billable",
         });
@@ -191,7 +202,17 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
             entry.task = taskId;
         }
         if (description !== undefined) entry.description = String(description).trim();
-        if (date    !== undefined) entry.date    = new Date(date);
+        if (date !== undefined) {
+            const newDate = new Date(date);
+            const leaveOnDay = await LeaveRequest.findOne({
+                employee:  req.user._id,
+                status:    "approved",
+                startDate: { $lte: newDate },
+                endDate:   { $gte: newDate },
+            });
+            if (leaveOnDay) throw badRequest("You have approved leave on this date and cannot log time entries");
+            entry.date = newDate;
+        }
         if (type    !== undefined) entry.type    = type;
 
         if (hours !== undefined) {
@@ -268,6 +289,8 @@ router.patch("/:id/submit", requireAuth, async (req, res, next) => {
         entry.submittedAt = new Date();
         await entry.save();
 
+        await entry.populate("project", "name");
+        await entry.populate("task", "name");
         return res.json(entryResponse(entry));
     } catch (err) {
         next(err);
