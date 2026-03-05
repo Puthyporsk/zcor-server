@@ -66,6 +66,13 @@ const UserSchema = new Schema(
             startDate: { type: Date },
             notes: { type: String, trim: true, maxlength: 2000 },
         },
+
+        // Leave policy — annual hour allocations used as defaults when creating LeaveBalance records
+        leavePolicy: {
+            vacationHours: { type: Number, min: 0, default: 80 },  // 10 days
+            sickHours:     { type: Number, min: 0, default: 40 },  // 5 days
+            personalHours: { type: Number, min: 0, default: 0 },
+        },
     }
 );
 
