@@ -1,6 +1,10 @@
 import { Router } from "express";
+import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import requireAuth from "../middleware/requireAuth.js";
+import requireRole from "../middleware/requireRole.js";
+import { sendInvitationEmail } from "../utils/utils.js";
+import { badRequest, conflict, notFound } from "../utils/httpError.js";
 
 const router = Router();
 
@@ -21,14 +25,97 @@ router.get("/", requireAuth, async (req, res, next) => {
 });
 
 /***
- * POST /api/user (protected)
- * Create a new user (Manager, Employee)
- * Body: { email, firstName, lastName, role }
+ * POST /api/user (protected — owner/manager only)
+ * Send an invitation email to a new user.
+ * Body: { firstName, lastName, email }
  */
-router.post("/", requireAuth, async (req, res, next) => {
+router.post("/", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
   try {
-    // Create user logic here
-    res.status(201).json({ message: "TODO: User created" });
+    const { firstName, lastName, email } = req.body || {};
+    if (!firstName) throw badRequest("firstName is required");
+    if (!lastName)  throw badRequest("lastName is required");
+    if (!email)     throw badRequest("email is required");
+
+    const emailNorm = String(email).toLowerCase().trim();
+    const firstSlug = String(firstName).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const lastSlug  = String(lastName).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
+    const baseUserId = `${firstSlug}.${lastSlug}`;
+
+    const existing = await User.findOne({ email: emailNorm });
+    if (existing) throw conflict("A user with this email already exists");
+
+    // Ensure userId is unique — append a number if taken
+    let userId = baseUserId;
+    let suffix = 1;
+    while (await User.findOne({ userId })) {
+      userId = `${baseUserId}${suffix++}`;
+    }
+
+    // Create placeholder user with real name
+    const placeholder = await User.create({
+      firstName: String(firstName).trim(),
+      lastName:  String(lastName).trim(),
+      userId,
+      email: emailNorm,
+      role: "employee",
+      status: "invited",
+    });
+
+    // Sign a 7-day invite JWT (include name so signup page can pre-fill)
+    const secret = process.env.JWT_SECRET;
+    if (!secret) throw new Error("JWT_SECRET is not set");
+    const token = jwt.sign(
+      {
+        email: emailNorm,
+        firstName: String(firstName).trim(),
+        lastName:  String(lastName).trim(),
+        userId,
+        placeholderId: placeholder._id.toString(),
+      },
+      secret,
+      { expiresIn: "7d" }
+    );
+
+    const base = process.env.FRONTEND_URL || "http://localhost:3000";
+    const inviteUrl = `${base}/signup?invite=${encodeURIComponent(token)}`;
+
+    const inviterName = `${req.user.firstName} ${req.user.lastName}`.trim();
+    try {
+      await sendInvitationEmail({ to: emailNorm, inviteUrl, inviterName });
+    } catch (mailErr) {
+      // Roll back placeholder if email fails
+      await User.findByIdAndDelete(placeholder._id);
+      console.error("sendInvitationEmail failed:", mailErr);
+      throw new Error("Failed to send invitation email. Please check SMTP settings.");
+    }
+
+    res.status(201).json({ message: "Invitation sent", user: placeholder });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/***
+ * PATCH /api/user/:id/role (protected — owner/manager only)
+ * Change a user's role.
+ * Body: { role }
+ */
+router.patch("/:id/role", requireAuth, requireRole("owner"), async (req, res, next) => {
+  try {
+    const { role } = req.body || {};
+    const validRoles = ["owner", "manager", "employee"];
+    if (!role || !validRoles.includes(role)) {
+      throw badRequest("role must be one of: owner, manager, employee");
+    }
+
+    const user = await User.findByIdAndUpdate(
+      req.params.id,
+      { role },
+      { new: true, runValidators: true }
+    );
+    if (!user) throw notFound("User not found");
+
+    res.json(user);
   } catch (err) {
     next(err);
   }

@@ -1,5 +1,6 @@
 // routes/auth.js
 import { Router } from "express";
+import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import requireAuth from "../middleware/requireAuth.js";
 import { signAccessToken } from "../utils/jwt.js";
@@ -227,6 +228,54 @@ router.post("/reset-password", async (req, res, next) => {
     await user.save();
 
     res.json({ message: "Password has been reset successfully." });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * POST /api/auth/register-invited
+ * Body: { token, firstName, lastName, userId, password }
+ * Activates an invited user by completing their profile.
+ */
+router.post("/register-invited", async (req, res, next) => {
+  try {
+    const { token, firstName, lastName, userId, password } = req.body || {};
+
+    if (!token) throw badRequest("Invite token is required");
+    if (!firstName || !lastName) throw badRequest("First and last name are required");
+    if (!userId) throw badRequest("User ID is required");
+    if (!password || String(password).length < 8) {
+      throw badRequest("Password must be at least 8 characters");
+    }
+
+    // Verify JWT invite token
+    let decoded;
+    try {
+      decoded = jwt.verify(token, process.env.JWT_SECRET);
+    } catch {
+      throw badRequest("Invalid or expired invitation link");
+    }
+
+    // Find the placeholder user
+    const user = await User.findById(decoded.placeholderId);
+    if (!user) throw badRequest("Invalid invitation");
+    if (user.status !== "invited") throw conflict("This invitation has already been used");
+
+    // Ensure userId is unique (excluding this user)
+    const existingUserId = await User.findOne({ userId, _id: { $ne: user._id } });
+    if (existingUserId) throw conflict("This User ID is already taken. Please choose another.");
+
+    // Update placeholder with real data
+    user.firstName = firstName.trim();
+    user.lastName  = lastName.trim();
+    user.userId    = userId;
+    user.password  = String(password); // triggers pre-save hash
+    user.status    = "active";
+
+    await user.save();
+
+    res.json({ message: "Account created successfully. Please sign in." });
   } catch (err) {
     next(err);
   }
