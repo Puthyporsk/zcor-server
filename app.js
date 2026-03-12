@@ -15,6 +15,8 @@ import projectsRouter from "./src/routes/projects.js";
 import inventoryRouter from "./src/routes/inventory.js";
 import inventoryOrdersRouter from "./src/routes/inventoryOrders.js";
 import leaveRouter from "./src/routes/leave.js";
+import payrollRouter from "./src/routes/payroll.js";
+import leavePolicyRouter from "./src/routes/leavePolicy.js";
 
 dotenv.config();
 
@@ -49,6 +51,8 @@ app.use("/api/projects", projectsRouter);
 app.use("/api/inventory", inventoryRouter);
 app.use("/api/inventory-orders", inventoryOrdersRouter);
 app.use("/api/leave", leaveRouter);
+app.use("/api/payroll", payrollRouter);
+app.use("/api/leave-policy", leavePolicyRouter);
 
 // error handler AFTER routes
 app.use((err, _req, res, _next) => {

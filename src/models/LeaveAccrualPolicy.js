@@ -1,0 +1,51 @@
+import mongoose from "mongoose";
+
+const { Schema } = mongoose;
+
+/**
+ * Singleton document — company-level leave accrual configuration.
+ * Fetched via LeaveAccrualPolicy.findOne({}).
+ */
+const TenureTierSchema = new Schema(
+    {
+        minYears:       { type: Number, required: true, min: 0 },
+        vacationHours:  { type: Number, required: true, min: 0 },
+        sickHours:      { type: Number, required: true, min: 0 },
+        personalHours:  { type: Number, required: true, min: 0 },
+    },
+    { _id: false }
+);
+
+const LeaveAccrualPolicySchema = new Schema(
+    {
+        accrualEnabled: { type: Boolean, default: true },
+
+        // Tenure tiers — evaluated descending by minYears; first match wins
+        tenureTiers: {
+            type: [TenureTierSchema],
+            default: [
+                { minYears: 0, vacationHours: 80, sickHours: 40, personalHours: 0 },
+            ],
+        },
+
+        // Cap = annualAllocation × multiplier; stop accruing once remaining hits this
+        accrualCapMultiplier: {
+            vacation:  { type: Number, default: 1.5, min: 1 },
+            sick:      { type: Number, default: 1.5, min: 1 },
+            personal:  { type: Number, default: 1.5, min: 1 },
+        },
+
+        // Max hours that roll into the next year (0 = use-it-or-lose-it)
+        carryoverLimits: {
+            vacation:  { type: Number, default: 40, min: 0 },
+            sick:      { type: Number, default: 40, min: 0 },
+            personal:  { type: Number, default: 0, min: 0 },
+        },
+
+        // No accrual during first N calendar days of employment
+        waitingPeriodDays: { type: Number, default: 90, min: 0 },
+    },
+    { timestamps: true }
+);
+
+export default mongoose.model("LeaveAccrualPolicy", LeaveAccrualPolicySchema);
