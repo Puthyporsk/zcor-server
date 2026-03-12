@@ -30,6 +30,21 @@ const LeaveBalanceSchema = new Schema(
 
         // Hours locked in pending requests (not yet approved/denied)
         pending: { type: Number, default: 0, min: 0 },
+
+        // Hours carried over from previous year (included in allocated)
+        carriedOver: { type: Number, default: 0, min: 0 },
+
+        // Audit trail of per-pay-period accruals
+        accrualLog: [
+            {
+                payPeriod:        { type: Schema.Types.ObjectId, ref: "PayPeriod" },
+                hoursAccrued:     { type: Number },
+                runningAllocated: { type: Number },
+                accrualDate:      { type: Date },
+                note:             { type: String },
+                _id: false,
+            },
+        ],
     },
     {
         timestamps: true,

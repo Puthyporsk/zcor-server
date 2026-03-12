@@ -62,10 +62,54 @@ const UserSchema = new Schema(
             jobTitle: { type: String, trim: true, maxlength: 120 },
             payType: { type: String, enum: ["hourly", "salary"], default: "hourly" },
             hourlyRate: { type: Number, min: 0 },
-            salaryRate: { type: Number, min: 0 },
+            salaryRate: { type: Number, min: 0 },   // annual salary
+            payFrequency: { type: String, enum: ["biweekly", "monthly"], default: "biweekly" },
+            overtimeEligible: { type: Boolean, default: true },
             startDate: { type: Date },
+            terminationDate: { type: Date },
             notes: { type: String, trim: true, maxlength: 2000 },
         },
+
+        // Per-employee overrides for leave accrual (optional — falls back to company policy)
+        accrualOverrides: {
+            vacationHoursOverride:  { type: Number, min: 0 },
+            sickHoursOverride:     { type: Number, min: 0 },
+            personalHoursOverride: { type: Number, min: 0 },
+            accrualCapMultiplier: {
+                vacation:  { type: Number, min: 0 },
+                sick:      { type: Number, min: 0 },
+                personal:  { type: Number, min: 0 },
+            },
+            carryoverLimit: {
+                vacation:  { type: Number, min: 0 },
+                sick:      { type: Number, min: 0 },
+                personal:  { type: Number, min: 0 },
+            },
+            waitingPeriodDaysOverride: { type: Number, min: 0 },
+        },
+
+        // Tax & payroll deduction config
+        taxInfo: {
+            federalFilingStatus: {
+                type: String,
+                enum: ["single", "married", "head_of_household"],
+                default: "single",
+            },
+            federalAllowances: { type: Number, default: 0, min: 0 },
+            stateWithholdingRate: { type: Number, default: 0, min: 0 }, // percentage
+            additionalWithholding: { type: Number, default: 0, min: 0 }, // flat $ per period
+        },
+
+        // Recurring payroll deductions (benefits, retirement, etc.)
+        payrollDeductions: [
+            {
+                name:       { type: String, required: true, trim: true, maxlength: 100 },
+                type:       { type: String, enum: ["benefit", "retirement", "other"], required: true },
+                calcMethod: { type: String, enum: ["percentage", "flat"], required: true },
+                value:      { type: Number, required: true, min: 0 }, // % or $ depending on calcMethod
+                preTax:     { type: Boolean, default: true },
+            },
+        ],
 
         // Leave policy — annual hour allocations used as defaults when creating LeaveBalance records
         leavePolicy: {
