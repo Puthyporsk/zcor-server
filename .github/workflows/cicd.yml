@@ -1,0 +1,33 @@
+name: Deploy ZCOR Server Application
+
+on:
+  push:
+      branches:
+          - production
+
+jobs:
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout Source Code
+              uses: actions/checkout@v4
+            - name: Login to docker hub
+              run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+            - name: Build Docker Image
+              run: docker build -t zcor/zcor-server .
+            - name: Publish Image to docker hub
+              run: docker push zcor/zcor-server:latest
+    deploy:
+        needs: build
+        runs-on:  self-hosted
+        steps:
+            - name: Login to docker hub
+              run: docker login -u ${{ secrets.DOCKER_USERNAME }} -p ${{ secrets.DOCKER_PASSWORD }}
+            - name: Pull image from docker hub
+              run: docker pull zcor/zcor-server:latest
+            - name: Delete old container
+              run: docker rm -f zcor-server-container
+            - name: Run Docker Container
+              run: docker run -d -p 5000:5000 --name zcor-server-container -e MONGO_URL='${{ secrets.MONGO_URL }}' zcor/zcor-server
+            - name: Delete old image
+              run: docker system prune -f
