@@ -28,6 +28,19 @@ jobs:
             - name: Delete old container
               run: docker rm -f zcor-server-container
             - name: Run Docker Container
-              run: docker run -d -p 5000:5000 --name zcor-server-container -e MONGO_URL='${{ secrets.MONGO_URL }}' zcor/zcor-server
+              run: >
+                docker run -d -p 5000:5000 --name zcor-server-container
+                -e MONGO_URL='${{ secrets.MONGO_URL }}'
+                -e JWT_SECRET='${{ secrets.JWT_SECRET }}'
+                -e JWT_EXPIRES_IN='${{ secrets.JWT_EXPIRES_IN }}'
+                -e NODE_ENV='production'
+                -e COOKIE_NAME='${{ secrets.COOKIE_NAME }}'
+                -e SMTP_HOST='${{ secrets.SMTP_HOST }}'
+                -e SMTP_PORT='${{ secrets.SMTP_PORT }}'
+                -e SMTP_USER='${{ secrets.SMTP_USER }}'
+                -e SMTP_PASS='${{ secrets.SMTP_PASS }}'
+                -e SMTP_FROM='${{ secrets.SMTP_FROM }}'
+                -e FRONTEND_URL='${{ secrets.FRONTEND_URL }}'
+                zcor/zcor-server
             - name: Delete old image
               run: docker system prune -f
