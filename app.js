@@ -1,9 +1,16 @@
 // app.js
+import { fileURLToPath } from "url";
+import { dirname, join } from "path";
+import dotenv from "dotenv";
+
+const __filename = fileURLToPath(import.meta.url);
+const __dirname = dirname(__filename);
+dotenv.config({ path: join(__dirname, ".env") });
+
 import express from "express";
 import cors from "cors";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
-import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
 import authenticate from "./src/middleware/authenticate.js";
 import authRouter from "./src/routes/auth.js";
@@ -17,8 +24,6 @@ import inventoryOrdersRouter from "./src/routes/inventoryOrders.js";
 import leaveRouter from "./src/routes/leave.js";
 import payrollRouter from "./src/routes/payroll.js";
 import leavePolicyRouter from "./src/routes/leavePolicy.js";
-
-dotenv.config();
 
 const app = express();
 app.set("view engine", "ejs");
