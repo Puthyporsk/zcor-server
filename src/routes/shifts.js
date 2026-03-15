@@ -4,6 +4,7 @@ import Shift from "../models/Shift.js";
 import requireAuth from "../middleware/requireAuth.js";
 import requireRole from "../middleware/requireRole.js";
 import { badRequest, forbidden, notFound } from "../utils/httpError.js";
+import { notifyUser } from "../utils/notify.js";
 
 const router = Router();
 
@@ -144,6 +145,21 @@ router.post("/", requireAuth, requireRole("owner", "manager"), async (req, res, 
         await shift.populate("employee", "firstName lastName userId employeeMeta");
         await shift.populate("task", "name");
 
+        // Notify the assigned employee
+        const creatorName = `${req.user.firstName} ${req.user.lastName}`.trim();
+        // Use the raw date string to avoid timezone shifts from new Date() UTC parsing
+        const dateStr = String(date).slice(0, 10);
+        if (!shift.employee._id.equals(req.user._id)) {
+            notifyUser({
+                recipient: employeeId,
+                type: "shift_assigned",
+                title: "New Shift Assigned",
+                message: `${creatorName} assigned you a shift on ${dateStr} (${startTime}–${endTime}).`,
+                relatedEntity: { kind: "Shift", item: shift._id },
+                metadata: { date: dateStr },
+            });
+        }
+
         return res.status(201).json(shiftResponse(shift));
     } catch (err) {
         next(err);
@@ -213,6 +229,22 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
         await shift.save();
         await shift.populate("employee", "firstName lastName userId employeeMeta");
         await shift.populate("task", "name");
+
+        // Notify the assigned employee if a manager/owner edited their shift
+        const isPrivilegedEditor = ["owner", "manager"].includes(req.user.role);
+        if (isPrivilegedEditor && !shift.employee._id.equals(req.user._id)) {
+            const editorName = `${req.user.firstName} ${req.user.lastName}`.trim();
+            // Use ISO string slice to get YYYY-MM-DD in UTC (matches how the date was stored)
+            const updatedDateStr = shift.date.toISOString().slice(0, 10);
+            notifyUser({
+                recipient: shift.employee._id,
+                type: "shift_updated",
+                title: "Shift Updated",
+                message: `${editorName} updated your shift on ${updatedDateStr}.`,
+                relatedEntity: { kind: "Shift", item: shift._id },
+                metadata: { date: updatedDateStr },
+            });
+        }
 
         return res.json(shiftResponse(shift));
     } catch (err) {

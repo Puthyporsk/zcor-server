@@ -26,6 +26,8 @@ import inventoryOrdersRouter from "./src/routes/inventoryOrders.js";
 import leaveRouter from "./src/routes/leave.js";
 import payrollRouter from "./src/routes/payroll.js";
 import leavePolicyRouter from "./src/routes/leavePolicy.js";
+import notificationsRouter from "./src/routes/notifications.js";
+import Notification from "./src/models/Notification.js";
 
 const app = express();
 app.set("view engine", "ejs");
@@ -70,6 +72,7 @@ app.use("/api/inventory-orders", inventoryOrdersRouter);
 app.use("/api/leave", leaveRouter);
 app.use("/api/payroll", payrollRouter);
 app.use("/api/leave-policy", leavePolicyRouter);
+app.use("/api/notifications", notificationsRouter);
 
 // error handler AFTER routes
 app.use((err, _req, res, _next) => {
@@ -82,8 +85,25 @@ app.use((err, _req, res, _next) => {
 
 mongoose
   .connect(process.env.MONGO_URL)
-  .then(() => {
+  .then(async () => {
     console.log("MongoDB Connection State:", mongoose.connection.readyState);
+
+    // Purge notifications soft-deleted more than 90 days ago
+    const purgeOldNotifications = async () => {
+      try {
+        const cutoff = new Date(Date.now() - 90 * 24 * 60 * 60 * 1000);
+        const result = await Notification.deleteMany({ deletedAt: { $lt: cutoff } });
+        if (result.deletedCount > 0) {
+          console.log(`Purged ${result.deletedCount} old soft-deleted notifications`);
+        }
+      } catch (err) {
+        console.error("Notification purge error:", err.message);
+      }
+    };
+
+    await purgeOldNotifications();
+    setInterval(purgeOldNotifications, 24 * 60 * 60 * 1000);
+
     const port = process.env.PORT || "5000";
     app.listen(port, (err) => {
       if (err) throw err;
