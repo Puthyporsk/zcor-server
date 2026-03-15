@@ -15,7 +15,7 @@ const router = Router();
 router.get("/", requireAuth, async (req, res, next) => {
   try {
     const users = await User.find()
-      .select({})
+      .select("-passwordHash -passwordReset -avatar.data")
       .sort({ createdAt: -1 });
 
     res.json(users);
@@ -126,7 +126,7 @@ router.patch("/:id/role", requireAuth, requireRole("owner"), async (req, res, ne
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { role },
-      { new: true, runValidators: true }
+      { new: true, runValidators: true, select: "-passwordHash -passwordReset -avatar.data" }
     );
     if (!user) throw notFound("User not found");
 
