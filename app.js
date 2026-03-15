@@ -12,6 +12,8 @@ import cors from "cors";
 import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import authenticate from "./src/middleware/authenticate.js";
 import authRouter from "./src/routes/auth.js";
 import usersRouter from "./src/routes/users.js";
@@ -28,6 +30,7 @@ import leavePolicyRouter from "./src/routes/leavePolicy.js";
 const app = express();
 app.set("view engine", "ejs");
 
+app.use(helmet());
 app.use(express.json({ limit: "10mb" }));
 app.use(bodyParser.urlencoded({ extended: true }));
 app.use(bodyParser.json());
@@ -41,13 +44,22 @@ app.options("*", cors());
 app.use(express.json());
 app.use(cookieParser());
 
+// Rate limiting on auth endpoints
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 15, // 15 attempts per window
+  message: { message: "Too many attempts. Please try again later." },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
 // sets req.user (if Bearer token present)
 app.use(authenticate);
 
 app.get("/", (_req, res) => res.send("Hello World!"));
 
 // mount routes
-app.use("/api/auth", authRouter);
+app.use("/api/auth", authLimiter, authRouter);
 app.use("/api/user", usersRouter);
 app.use("/api/time-entries", timeEntriesRouter);
 app.use("/api/tasks", tasksRouter);
