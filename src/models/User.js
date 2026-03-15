@@ -111,6 +111,9 @@ const UserSchema = new Schema(
             },
         ],
 
+        // Who sent the invitation (for notification when invite is accepted)
+        invitedBy: { type: Schema.Types.ObjectId, ref: "User" },
+
         // Leave policy — annual hour allocations used as defaults when creating LeaveBalance records
         leavePolicy: {
             vacationHours: { type: Number, min: 0, default: 80 },  // 10 days

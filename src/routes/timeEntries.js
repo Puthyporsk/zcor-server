@@ -5,6 +5,7 @@ import LeaveRequest from "../models/LeaveRequest.js";
 import requireAuth from "../middleware/requireAuth.js";
 import requireRole from "../middleware/requireRole.js";
 import { badRequest, forbidden, notFound } from "../utils/httpError.js";
+import { notifyUser, notifyManagers } from "../utils/notify.js";
 
 const router = Router();
 
@@ -289,6 +290,15 @@ router.patch("/:id/submit", requireAuth, async (req, res, next) => {
         entry.submittedAt = new Date();
         await entry.save();
 
+        // Notify managers/owners
+        const submitterName = `${req.user.firstName} ${req.user.lastName}`.trim();
+        notifyManagers({
+            type: "time_entry_submitted",
+            title: "Time Entry Submitted",
+            message: `${submitterName} submitted a time entry for review.`,
+            relatedEntity: { kind: "TimeEntry", item: entry._id },
+        });
+
         await entry.populate("project", "name");
         await entry.populate("task", "name");
         return res.json(entryResponse(entry));
@@ -325,6 +335,17 @@ router.patch("/:id/review", requireAuth, requireRole("owner", "manager"), async 
         entry.reviewNote = reviewNote ? String(reviewNote).trim() : undefined;
 
         await entry.save();
+
+        // Notify the entry owner
+        const reviewerName = `${req.user.firstName} ${req.user.lastName}`.trim();
+        const statusLabel = action === "approve" ? "approved" : "rejected";
+        notifyUser({
+            recipient: entry.user,
+            type: action === "approve" ? "time_entry_approved" : "time_entry_rejected",
+            title: `Time Entry ${action === "approve" ? "Approved" : "Rejected"}`,
+            message: `${reviewerName} ${statusLabel} your time entry.${reviewNote ? ` Note: ${reviewNote}` : ""}`,
+            relatedEntity: { kind: "TimeEntry", item: entry._id },
+        });
 
         await entry.populate("reviewedBy", "firstName lastName userId");
         await entry.populate("project", "name");

@@ -8,6 +8,8 @@ import LeaveRequest from "../models/LeaveRequest.js";
 import requireAuth from "../middleware/requireAuth.js";
 import requireRole from "../middleware/requireRole.js";
 import { badRequest, forbidden, notFound, conflict } from "../utils/httpError.js";
+import Notification from "../models/Notification.js";
+import { notifyUser, notifyManagers } from "../utils/notify.js";
 import { calcWeeklyOvertime, calculatePayslip } from "../utils/payrollCalc.js";
 import { accrueLeaveForPayPeriod } from "../utils/leaveAccrual.js";
 import LeaveBalance from "../models/LeaveBalance.js";
@@ -332,6 +334,31 @@ router.patch(
             await period.save();
             await period.populate("createdBy", "firstName lastName");
             await period.populate("approvedBy", "firstName lastName");
+
+            // Notify managers/owners about status change
+            const actorName = `${req.user.firstName} ${req.user.lastName}`.trim();
+            const periodLabel = `${new Date(period.startDate).toLocaleDateString("en-US")} – ${new Date(period.endDate).toLocaleDateString("en-US")}`;
+            notifyManagers({
+                type: "pay_period_status_change",
+                title: "Pay Period Updated",
+                message: `${actorName} moved pay period ${periodLabel} to "${period.status}".`,
+                relatedEntity: { kind: "PayPeriod", item: period._id },
+                excludeUserId: req.user._id,
+            });
+
+            // Notify employees when payslips become visible (approved or paid)
+            if (action === "approve" || action === "pay") {
+                const payslips = await Payslip.find({ payPeriod: period._id }).select("employee");
+                for (const ps of payslips) {
+                    notifyUser({
+                        recipient: ps.employee,
+                        type: "payslip_available",
+                        title: action === "pay" ? "Payslip Paid" : "Payslip Available",
+                        message: `Your payslip for ${periodLabel} is now ${action === "pay" ? "marked as paid" : "available to view"}.`,
+                        relatedEntity: { kind: "Payslip", item: ps._id },
+                    });
+                }
+            }
 
             return res.json(payPeriodResponse(period));
         } catch (err) {

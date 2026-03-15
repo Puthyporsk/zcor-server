@@ -51,6 +51,27 @@ export async function sendPasswordResetEmail({ to, resetUrl }) {
   await sendMail({ to, subject, text, html });
 }
 
+export async function sendInviteAcceptedEmail({ to, inviteeName, dashboardUrl }) {
+  const subject = `${inviteeName} has joined ZCOR`;
+  const text = `${inviteeName} has accepted your invitation and created their account on ZCOR.\n\nView your dashboard:\n${dashboardUrl}`;
+  const html = `
+    <div style="font-family:Arial,sans-serif; line-height:1.4">
+      <h2>${inviteeName} has joined ZCOR</h2>
+      <p>${inviteeName} has accepted your invitation and created their account.</p>
+      <p>
+        <a href="${dashboardUrl}" style="display:inline-block; padding:10px 14px; border-radius:8px; background:#214318; color:#fff; text-decoration:none; font-weight:700">
+          Go to Dashboard
+        </a>
+      </p>
+      <p style="font-size:12px; color:#666">
+        Or copy and paste this link: <br/>
+        <a href="${dashboardUrl}">${dashboardUrl}</a>
+      </p>
+    </div>
+  `;
+  await sendMail({ to, subject, text, html });
+}
+
 function makeTransport() {
   const host = process.env.SMTP_HOST;
   const port = Number(process.env.SMTP_PORT || 465);

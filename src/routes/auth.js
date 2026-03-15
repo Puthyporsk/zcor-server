@@ -4,7 +4,8 @@ import jwt from "jsonwebtoken";
 import User from "../models/User.js";
 import requireAuth from "../middleware/requireAuth.js";
 import { signAccessToken } from "../utils/jwt.js";
-import { sendPasswordResetEmail } from "../utils/utils.js";
+import { sendPasswordResetEmail, sendInviteAcceptedEmail } from "../utils/utils.js";
+import Notification from "../models/Notification.js";
 import { badRequest, conflict, unauthorized } from "../utils/httpError.js";
 import { createHash } from "crypto";
 
@@ -274,6 +275,34 @@ router.post("/register-invited", async (req, res, next) => {
     user.status    = "active";
 
     await user.save();
+
+    // Notify the inviter (fire-and-forget — don't block registration)
+    if (user.invitedBy) {
+      const inviteeName = `${user.firstName} ${user.lastName}`.trim();
+      const dashboardUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/dashboard`;
+
+      // In-app notification
+      Notification.create({
+        recipient: user.invitedBy,
+        type: "invite_accepted",
+        title: "Invitation Accepted",
+        message: `${inviteeName} has accepted your invitation and joined ZCOR.`,
+        relatedEntity: { kind: "User", item: user._id },
+      }).catch((err) => console.error("Failed to create invite notification:", err));
+
+      // Email notification
+      User.findById(user.invitedBy)
+        .then((inviter) => {
+          if (inviter?.email) {
+            return sendInviteAcceptedEmail({
+              to: inviter.email,
+              inviteeName,
+              dashboardUrl,
+            });
+          }
+        })
+        .catch((err) => console.error("Failed to send invite-accepted email:", err));
+    }
 
     res.json({ message: "Account created successfully. Please sign in." });
   } catch (err) {
