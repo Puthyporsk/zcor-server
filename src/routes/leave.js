@@ -5,6 +5,7 @@ import LeaveBalance from "../models/LeaveBalance.js";
 import requireAuth from "../middleware/requireAuth.js";
 import requireRole from "../middleware/requireRole.js";
 import { badRequest, forbidden, notFound } from "../utils/httpError.js";
+import { notifyUser, notifyManagers } from "../utils/notify.js";
 
 const router = Router();
 
@@ -194,6 +195,16 @@ router.post("/", requireAuth, async (req, res, next) => {
         );
 
         await leaveReq.populate("employee", "firstName lastName userId employeeMeta");
+
+        // Notify managers/owners
+        const requesterName = `${req.user.firstName} ${req.user.lastName}`.trim();
+        notifyManagers({
+            type: "leave_request_submitted",
+            title: "Leave Request Submitted",
+            message: `${requesterName} submitted a ${type} leave request.`,
+            relatedEntity: { kind: "LeaveRequest", item: leaveReq._id },
+        });
+
         return res.status(201).json(requestResponse(leaveReq));
     } catch (err) {
         next(err);
@@ -394,6 +405,18 @@ router.patch("/:id/review", requireAuth, requireRole("owner", "manager"), async 
 
         await leaveReq.populate("employee", "firstName lastName userId employeeMeta");
         await leaveReq.populate("reviewedBy", "firstName lastName userId");
+
+        // Notify the employee
+        const reviewerName = `${req.user.firstName} ${req.user.lastName}`.trim();
+        const leaveStatus = action === "approve" ? "approved" : "denied";
+        notifyUser({
+            recipient: leaveReq.employee._id,
+            type: action === "approve" ? "leave_request_approved" : "leave_request_denied",
+            title: `Leave Request ${action === "approve" ? "Approved" : "Denied"}`,
+            message: `${reviewerName} ${leaveStatus} your ${type} leave request.${reviewNote ? ` Note: ${reviewNote}` : ""}`,
+            relatedEntity: { kind: "LeaveRequest", item: leaveReq._id },
+        });
+
         return res.json(requestResponse(leaveReq));
     } catch (err) {
         next(err);

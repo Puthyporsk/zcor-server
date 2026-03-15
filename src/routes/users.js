@@ -15,7 +15,7 @@ const router = Router();
 router.get("/", requireAuth, async (req, res, next) => {
   try {
     const users = await User.find()
-      .select("-passwordHash -passwordReset -avatar.data")
+      .select("-passwordHash -passwordReset.tokenHash -passwordReset.expiresAt -avatar.data")
       .sort({ createdAt: -1 });
 
     res.json(users);
@@ -63,6 +63,7 @@ router.post("/", requireAuth, requireRole("owner", "manager"), async (req, res, 
       email: emailNorm,
       role: "employee",
       status: "invited",
+      invitedBy: req.user._id,
       employeeMeta: {
         employeeCode: empCode,
         jobTitle: "Staff Member",
@@ -126,7 +127,7 @@ router.patch("/:id/role", requireAuth, requireRole("owner"), async (req, res, ne
     const user = await User.findByIdAndUpdate(
       req.params.id,
       { role },
-      { new: true, runValidators: true, select: "-passwordHash -passwordReset -avatar.data" }
+      { new: true, runValidators: true, select: "-passwordHash -passwordReset.tokenHash -passwordReset.expiresAt -avatar.data" }
     );
     if (!user) throw notFound("User not found");
 
