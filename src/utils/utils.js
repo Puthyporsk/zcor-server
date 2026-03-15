@@ -53,7 +53,7 @@ export async function sendPasswordResetEmail({ to, resetUrl }) {
 
 function makeTransport() {
   const host = process.env.SMTP_HOST;
-  const port = Number(process.env.SMTP_PORT || 587);
+  const port = Number(process.env.SMTP_PORT || 465);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
 
@@ -64,14 +64,17 @@ function makeTransport() {
   return nodemailer.createTransport({
     host,
     port,
+    secure: port === 465,
     auth: { user, pass },
   });
 }
 
 async function sendMail({ to, subject, html, text }) {
   const transport = makeTransport();
+  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
 
   return transport.sendMail({
+    from,
     to,
     subject,
     text,

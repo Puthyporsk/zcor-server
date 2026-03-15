@@ -31,10 +31,13 @@ router.get("/", requireAuth, async (req, res, next) => {
  */
 router.post("/", requireAuth, requireRole("owner", "manager"), async (req, res, next) => {
   try {
-    const { firstName, lastName, email } = req.body || {};
+    const { firstName, lastName, email, payType, hourlyRate, salaryRate } = req.body || {};
     if (!firstName) throw badRequest("firstName is required");
     if (!lastName)  throw badRequest("lastName is required");
     if (!email)     throw badRequest("email is required");
+    if (!payType || !["hourly", "salary"].includes(payType)) throw badRequest("payType must be hourly or salary");
+    if (payType === "hourly" && (hourlyRate == null || hourlyRate < 0)) throw badRequest("hourlyRate is required for hourly employees");
+    if (payType === "salary" && (salaryRate == null || salaryRate < 0)) throw badRequest("salaryRate is required for salaried employees");
 
     const emailNorm = String(email).toLowerCase().trim();
     const firstSlug = String(firstName).trim().toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -51,7 +54,8 @@ router.post("/", requireAuth, requireRole("owner", "manager"), async (req, res, 
       userId = `${baseUserId}${suffix++}`;
     }
 
-    // Create placeholder user with real name
+    // Create placeholder user with real name and employee meta
+    const empCode = `EMP-${String(Math.floor(1000 + Math.random() * 9000))}`;
     const placeholder = await User.create({
       firstName: String(firstName).trim(),
       lastName:  String(lastName).trim(),
@@ -59,6 +63,17 @@ router.post("/", requireAuth, requireRole("owner", "manager"), async (req, res, 
       email: emailNorm,
       role: "employee",
       status: "invited",
+      employeeMeta: {
+        employeeCode: empCode,
+        jobTitle: "Staff Member",
+        payType,
+        hourlyRate: payType === "hourly" ? Number(hourlyRate) : 0,
+        salaryRate: payType === "salary" ? Number(salaryRate) : 0,
+        payFrequency: payType === "hourly" ? "biweekly" : "monthly",
+        overtimeEligible: payType === "hourly",
+        startDate: new Date(),
+        notes: `Joined via invitation on ${new Date().toLocaleDateString("en-US")}.`,
+      },
     });
 
     // Sign a 7-day invite JWT (include name so signup page can pre-fill)
