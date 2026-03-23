@@ -144,9 +144,10 @@ function makeTransport() {
 async function sendMail({ to, subject, html, text }) {
   const transport = makeTransport();
   const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = fromAddr.includes("<") ? fromAddr : `ZCOR <${fromAddr}>`;
 
   return transport.sendMail({
-    from: `ZCOR <${fromAddr}>`,
+    from,
     to,
     subject,
     text,
