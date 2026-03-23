@@ -51,6 +51,7 @@ const authLimiter = rateLimit({
   message: { message: "Too many attempts. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,
+  skipSuccessfulRequests: true,
 });
 
 // sets req.user (if Bearer token present)

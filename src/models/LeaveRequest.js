@@ -37,6 +37,13 @@ const LeaveRequestSchema = new Schema(
             index: true,
         },
 
+        // Per-year hour distribution (for cross-year requests)
+        yearBreakdown: [{
+            year:  { type: Number, required: true },
+            hours: { type: Number, required: true, min: 0 },
+            _id: false,
+        }],
+
         reviewedBy:  { type: Schema.Types.ObjectId, ref: "User" },
         reviewedAt:  { type: Date },
         reviewNote:  { type: String, trim: true, maxlength: 500 },
