@@ -2,10 +2,13 @@ import { Router } from "express";
 import mongoose from "mongoose";
 import LeaveRequest from "../models/LeaveRequest.js";
 import LeaveBalance from "../models/LeaveBalance.js";
+import LeaveAccrualPolicy from "../models/LeaveAccrualPolicy.js";
+import User from "../models/User.js";
 import requireAuth from "../middleware/requireAuth.js";
 import requireRole from "../middleware/requireRole.js";
 import { badRequest, forbidden, notFound } from "../utils/httpError.js";
 import { notifyUser, notifyManagers } from "../utils/notify.js";
+import { splitHoursByYear, getAvailableHours, initializeYearBalance } from "../utils/leaveAccrual.js";
 
 const router = Router();
 
@@ -13,19 +16,20 @@ const LEAVE_TYPES = ["sick", "vacation", "personal"];
 
 function requestResponse(req) {
     return {
-        id:          req._id,
-        employee:    req.employee,
-        type:        req.type,
-        startDate:   req.startDate,
-        endDate:     req.endDate,
-        totalHours:  req.totalHours,
-        reason:      req.reason || "",
-        status:      req.status,
-        reviewedBy:  req.reviewedBy || null,
-        reviewedAt:  req.reviewedAt || null,
-        reviewNote:  req.reviewNote || "",
-        createdAt:   req.createdAt,
-        updatedAt:   req.updatedAt,
+        id:             req._id,
+        employee:       req.employee,
+        type:           req.type,
+        startDate:      req.startDate,
+        endDate:        req.endDate,
+        totalHours:     req.totalHours,
+        yearBreakdown:  req.yearBreakdown || [],
+        reason:         req.reason || "",
+        status:         req.status,
+        reviewedBy:     req.reviewedBy || null,
+        reviewedAt:     req.reviewedAt || null,
+        reviewNote:     req.reviewNote || "",
+        createdAt:      req.createdAt,
+        updatedAt:      req.updatedAt,
     };
 }
 
@@ -188,15 +192,29 @@ router.post("/", requireAuth, async (req, res, next) => {
             throw badRequest("You already have an approved or pending leave request that overlaps with the selected dates");
         }
 
-        // Validate against available balance
-        const year = start.getFullYear();
-        const balance = await LeaveBalance.findOne({ employee: req.user._id, type, year });
-        const allocated = balance?.allocated || 0;
-        const used      = balance?.used || 0;
-        const pending   = balance?.pending || 0;
-        const available = allocated - used - pending;
-        if (parsedHours > available) {
-            throw badRequest(`Insufficient ${type} leave balance. Available: ${available}h, Requested: ${parsedHours}h`);
+        // Block requests beyond current year + 1
+        const currentYear = new Date().getFullYear();
+        const reqEndYear = end.getFullYear();
+        if (reqEndYear > currentYear + 1) {
+            throw badRequest("Leave requests cannot extend beyond next year");
+        }
+
+        // Compute year breakdown for cross-year support
+        const yearBreakdown = splitHoursByYear(start, end, parsedHours);
+
+        // Load policy and employee for mode-aware validation
+        const policy = await LeaveAccrualPolicy.findOne({}) || new LeaveAccrualPolicy();
+        const employee = await User.findById(req.user._id);
+
+        // Validate each year's balance
+        for (const { year, hours } of yearBreakdown) {
+            // Auto-initialize balance for future years
+            await initializeYearBalance(employee, type, year, policy);
+            const balance = await LeaveBalance.findOne({ employee: req.user._id, type, year });
+            const available = getAvailableHours(balance, employee, policy, type, year);
+            if (hours > available) {
+                throw badRequest(`Insufficient ${type} leave balance for ${year}. Available: ${available}h, Requested: ${hours}h`);
+            }
         }
 
         const leaveReq = await LeaveRequest.create({
@@ -205,15 +223,18 @@ router.post("/", requireAuth, async (req, res, next) => {
             startDate:  start,
             endDate:    end,
             totalHours: parsedHours,
+            yearBreakdown,
             reason:     reason ? String(reason).trim() : undefined,
         });
 
-        // Add to pending balance for this year
-        await LeaveBalance.findOneAndUpdate(
-            { employee: req.user._id, type, year },
-            { $inc: { pending: parsedHours } },
-            { upsert: true, new: true }
-        );
+        // Add to pending balance for each year
+        for (const { year, hours } of yearBreakdown) {
+            await LeaveBalance.findOneAndUpdate(
+                { employee: req.user._id, type, year },
+                { $inc: { pending: hours } },
+                { upsert: true, new: true }
+            );
+        }
 
         await leaveReq.populate("employee", "firstName lastName userId employeeMeta");
 
@@ -319,34 +340,59 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
         }
         if (reason !== undefined) leaveReq.reason = String(reason).trim();
 
-        await leaveReq.save();
+        // Block requests beyond current year + 1
+        const currentYear = new Date().getFullYear();
+        if (leaveReq.endDate.getFullYear() > currentYear + 1) {
+            throw badRequest("Leave requests cannot extend beyond next year");
+        }
 
-        // Adjust pending balance: remove old, add new
-        const newYear  = leaveReq.startDate.getFullYear();
-        const newType  = leaveReq.type;
-        const newHours = leaveReq.totalHours;
+        // Compute new year breakdown
+        const newBreakdown = splitHoursByYear(leaveReq.startDate, leaveReq.endDate, leaveReq.totalHours);
+        const oldBreakdown = leaveReq.yearBreakdown?.length
+            ? leaveReq.yearBreakdown
+            : [{ year: oldYear, hours: oldHours }]; // legacy fallback
 
-        if (oldYear === newYear && oldType === newType) {
-            const diff = newHours - oldHours;
-            if (diff !== 0) {
-                await LeaveBalance.findOneAndUpdate(
-                    { employee: req.user._id, type: newType, year: newYear },
-                    [{ $set: { pending: { $max: [0, { $add: ["$pending", diff] }] } } }],
-                    { upsert: true }
-                );
-            }
-        } else {
-            // Type or year changed — remove from old bucket, add to new bucket
+        // Load policy and employee for mode-aware validation
+        const policy = await LeaveAccrualPolicy.findOne({}) || new LeaveAccrualPolicy();
+        const employee = await User.findById(req.user._id);
+
+        // Revert old pending, then validate and apply new pending
+        for (const { year, hours } of oldBreakdown) {
             await LeaveBalance.findOneAndUpdate(
-                { employee: req.user._id, type: oldType, year: oldYear },
-                [{ $set: { pending: { $max: [0, { $subtract: ["$pending", oldHours] }] } } }]
+                { employee: req.user._id, type: oldType, year },
+                [{ $set: { pending: { $max: [0, { $subtract: ["$pending", hours] }] } } }]
             );
+        }
+
+        // Validate new breakdown
+        for (const { year, hours } of newBreakdown) {
+            await initializeYearBalance(employee, leaveReq.type, year, policy);
+            const balance = await LeaveBalance.findOne({ employee: req.user._id, type: leaveReq.type, year });
+            const available = getAvailableHours(balance, employee, policy, leaveReq.type, year);
+            if (hours > available) {
+                // Restore old pending before throwing
+                for (const ob of oldBreakdown) {
+                    await LeaveBalance.findOneAndUpdate(
+                        { employee: req.user._id, type: oldType, year: ob.year },
+                        { $inc: { pending: ob.hours } },
+                        { upsert: true }
+                    );
+                }
+                throw badRequest(`Insufficient ${leaveReq.type} leave balance for ${year}. Available: ${available}h, Requested: ${hours}h`);
+            }
+        }
+
+        // Apply new pending
+        for (const { year, hours } of newBreakdown) {
             await LeaveBalance.findOneAndUpdate(
-                { employee: req.user._id, type: newType, year: newYear },
-                { $inc: { pending: newHours } },
+                { employee: req.user._id, type: leaveReq.type, year },
+                { $inc: { pending: hours } },
                 { upsert: true }
             );
         }
+
+        leaveReq.yearBreakdown = newBreakdown;
+        await leaveReq.save();
 
         await leaveReq.populate("employee", "firstName lastName userId employeeMeta");
         return res.json(requestResponse(leaveReq));
@@ -372,19 +418,25 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
         }
 
         const { type, totalHours, startDate, status } = leaveReq;
-        const year = startDate.getFullYear();
+        const breakdown = leaveReq.yearBreakdown?.length
+            ? leaveReq.yearBreakdown
+            : [{ year: startDate.getFullYear(), hours: totalHours }]; // legacy fallback
 
         // Return hours to balance based on status
         if (status === "pending") {
-            await LeaveBalance.findOneAndUpdate(
-                { employee: req.user._id, type, year },
-                [{ $set: { pending: { $max: [0, { $subtract: ["$pending", totalHours] }] } } }]
-            );
+            for (const { year, hours } of breakdown) {
+                await LeaveBalance.findOneAndUpdate(
+                    { employee: req.user._id, type, year },
+                    [{ $set: { pending: { $max: [0, { $subtract: ["$pending", hours] }] } } }]
+                );
+            }
         } else if (status === "approved") {
-            await LeaveBalance.findOneAndUpdate(
-                { employee: req.user._id, type, year },
-                [{ $set: { used: { $max: [0, { $subtract: ["$used", totalHours] }] } } }]
-            );
+            for (const { year, hours } of breakdown) {
+                await LeaveBalance.findOneAndUpdate(
+                    { employee: req.user._id, type, year },
+                    [{ $set: { used: { $max: [0, { $subtract: ["$used", hours] }] } } }]
+                );
+            }
         }
         // denied/cancelled — no balance adjustment needed
 
@@ -416,7 +468,9 @@ router.patch("/:id/review", requireAuth, requireRole("owner", "manager"), async 
         if (!["approve", "deny"].includes(action)) throw badRequest('action must be "approve" or "deny"');
 
         const { type, totalHours, startDate } = leaveReq;
-        const year = startDate.getFullYear();
+        const breakdown = leaveReq.yearBreakdown?.length
+            ? leaveReq.yearBreakdown
+            : [{ year: startDate.getFullYear(), hours: totalHours }]; // legacy fallback
 
         leaveReq.status     = action === "approve" ? "approved" : "denied";
         leaveReq.reviewedBy = req.user._id;
@@ -426,20 +480,22 @@ router.patch("/:id/review", requireAuth, requireRole("owner", "manager"), async 
         await leaveReq.save();
 
         // Move hours from pending → used (approved) or just remove from pending (denied)
-        if (action === "approve") {
-            await LeaveBalance.findOneAndUpdate(
-                { employee: leaveReq.employee, type, year },
-                [{ $set: {
-                    pending: { $max: [0, { $subtract: ["$pending", totalHours] }] },
-                    used:    { $add: ["$used", totalHours] },
-                } }],
-                { upsert: true }
-            );
-        } else {
-            await LeaveBalance.findOneAndUpdate(
-                { employee: leaveReq.employee, type, year },
-                [{ $set: { pending: { $max: [0, { $subtract: ["$pending", totalHours] }] } } }]
-            );
+        for (const { year, hours } of breakdown) {
+            if (action === "approve") {
+                await LeaveBalance.findOneAndUpdate(
+                    { employee: leaveReq.employee, type, year },
+                    [{ $set: {
+                        pending: { $max: [0, { $subtract: ["$pending", hours] }] },
+                        used:    { $add: ["$used", hours] },
+                    } }],
+                    { upsert: true }
+                );
+            } else {
+                await LeaveBalance.findOneAndUpdate(
+                    { employee: leaveReq.employee, type, year },
+                    [{ $set: { pending: { $max: [0, { $subtract: ["$pending", hours] }] } } }]
+                );
+            }
         }
 
         await leaveReq.populate("employee", "firstName lastName userId employeeMeta");
