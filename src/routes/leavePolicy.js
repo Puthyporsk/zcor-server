@@ -39,6 +39,9 @@ router.put("/", requireAuth, requireRole("owner"), async (req, res, next) => {
             accrualCapMultiplier,
             carryoverLimits,
             waitingPeriodDays,
+            availabilityMode,
+            maxBorrowAheadHours,
+            midYearHireProration,
         } = req.body || {};
 
         // Validate tenure tiers
@@ -58,12 +61,32 @@ router.put("/", requireAuth, requireRole("owner"), async (req, res, next) => {
             }
         }
 
+        // Validate availabilityMode
+        if (availabilityMode !== undefined) {
+            const VALID_MODES = ["front_loaded", "accrual_only", "hybrid"];
+            if (!VALID_MODES.includes(availabilityMode)) {
+                throw badRequest(`availabilityMode must be one of: ${VALID_MODES.join(", ")}`);
+            }
+        }
+
+        // Validate maxBorrowAheadHours
+        if (maxBorrowAheadHours !== undefined) {
+            for (const t of ["vacation", "sick", "personal"]) {
+                if (maxBorrowAheadHours[t] !== undefined && (typeof maxBorrowAheadHours[t] !== "number" || maxBorrowAheadHours[t] < 0)) {
+                    throw badRequest(`maxBorrowAheadHours.${t} must be a non-negative number`);
+                }
+            }
+        }
+
         const update = {};
         if (accrualEnabled !== undefined) update.accrualEnabled = accrualEnabled;
         if (tenureTiers !== undefined)     update.tenureTiers = tenureTiers;
         if (accrualCapMultiplier !== undefined) update.accrualCapMultiplier = accrualCapMultiplier;
         if (carryoverLimits !== undefined)      update.carryoverLimits = carryoverLimits;
         if (waitingPeriodDays !== undefined)    update.waitingPeriodDays = waitingPeriodDays;
+        if (availabilityMode !== undefined)     update.availabilityMode = availabilityMode;
+        if (maxBorrowAheadHours !== undefined)  update.maxBorrowAheadHours = maxBorrowAheadHours;
+        if (midYearHireProration !== undefined) update.midYearHireProration = midYearHireProration;
 
         const policy = await LeaveAccrualPolicy.findOneAndUpdate(
             {},

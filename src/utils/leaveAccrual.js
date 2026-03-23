@@ -156,7 +156,7 @@ export function calculateCarryover(balances, employee, policy) {
 /**
  * Calculate termination payout (typically only vacation is paid out).
  */
-export function calculateTerminationPayout(employee, balances) {
+export function calculateTerminationPayout(employee, balances, policy) {
     const hourlyRate = employee.employeeMeta?.hourlyRate || 0;
     const payType = employee.employeeMeta?.payType || "hourly";
     const salaryRate = employee.employeeMeta?.salaryRate || 0;
@@ -173,6 +173,156 @@ export function calculateTerminationPayout(employee, balances) {
         effectiveHourlyRate: effectiveRate,
         payoutAmount,
     };
+}
+
+// ─── Cross-year & availability mode helpers ──────────────────────────────────
+
+/**
+ * Count weekdays (Mon–Fri) between two dates (inclusive).
+ */
+function countWeekdays(start, end) {
+    let count = 0;
+    const d = new Date(start);
+    d.setHours(0, 0, 0, 0);
+    const e = new Date(end);
+    e.setHours(0, 0, 0, 0);
+    while (d <= e) {
+        const dow = d.getDay();
+        if (dow !== 0 && dow !== 6) count++;
+        d.setDate(d.getDate() + 1);
+    }
+    return count;
+}
+
+/**
+ * Split totalHours across calendar years proportionally by working days.
+ * Returns [{ year, hours }] — always at least one entry.
+ */
+export function splitHoursByYear(startDate, endDate, totalHours) {
+    const start = new Date(startDate);
+    const end = new Date(endDate);
+    const startYear = start.getFullYear();
+    const endYear = end.getFullYear();
+
+    // Same year — no split needed
+    if (startYear === endYear) {
+        return [{ year: startYear, hours: totalHours }];
+    }
+
+    // Count weekdays per year
+    const yearDays = [];
+    for (let y = startYear; y <= endYear; y++) {
+        const segStart = y === startYear ? start : new Date(y, 0, 1);
+        const segEnd = y === endYear ? end : new Date(y, 11, 31);
+        yearDays.push({ year: y, days: countWeekdays(segStart, segEnd) });
+    }
+
+    const totalDays = yearDays.reduce((sum, yd) => sum + yd.days, 0);
+    if (totalDays === 0) return [{ year: startYear, hours: totalHours }];
+
+    // Distribute proportionally, round to 0.25h
+    const roundQtr = (n) => Math.round(n * 4) / 4;
+    let remaining = totalHours;
+    const result = [];
+
+    for (let i = 0; i < yearDays.length; i++) {
+        if (i === yearDays.length - 1) {
+            // Last segment gets the remainder to ensure sum matches
+            result.push({ year: yearDays[i].year, hours: round(remaining) });
+        } else {
+            const portion = roundQtr(totalHours * (yearDays[i].days / totalDays));
+            result.push({ year: yearDays[i].year, hours: portion });
+            remaining -= portion;
+        }
+    }
+
+    return result.filter((r) => r.hours > 0);
+}
+
+/**
+ * Calculate available hours for an employee based on the availability mode.
+ * @param {Object} balance - LeaveBalance doc (or null)
+ * @param {Object} employee - User doc
+ * @param {Object} policy - LeaveAccrualPolicy doc
+ * @param {string} type - "vacation" | "sick" | "personal"
+ * @param {number} year - Calendar year
+ * @returns {number} Available hours the employee can request
+ */
+export function getAvailableHours(balance, employee, policy, type, year) {
+    const allocated = balance?.allocated || 0;
+    const used = balance?.used || 0;
+    const pending = balance?.pending || 0;
+    const carriedOver = balance?.carriedOver || 0;
+    const mode = policy?.availabilityMode || "accrual_only";
+
+    if (mode === "accrual_only") {
+        return allocated - used - pending;
+    }
+
+    const annual = getAnnualAllocation(employee, policy, new Date(year, 6, 1));
+    let annualForType = annual[type] || 0;
+
+    // Prorate for mid-year hires in front_loaded mode
+    if (mode === "front_loaded" && policy.midYearHireProration) {
+        const hireDate = employee.employeeMeta?.startDate;
+        if (hireDate) {
+            const hire = new Date(hireDate);
+            if (hire.getFullYear() === year) {
+                const monthsRemaining = 12 - hire.getMonth();
+                annualForType = round(annualForType * (monthsRemaining / 12));
+            }
+        }
+    }
+
+    if (mode === "front_loaded") {
+        return annualForType + carriedOver - used - pending;
+    }
+
+    // hybrid mode
+    const borrowLimit = policy.maxBorrowAheadHours?.[type] || 0;
+    const withBorrow = allocated + borrowLimit - used - pending;
+    const cap = annualForType + carriedOver - used - pending;
+    return Math.min(withBorrow, cap);
+}
+
+/**
+ * Initialize a LeaveBalance record for an employee/type/year.
+ * Used for auto-creating balances when requesting leave for a future year.
+ */
+export async function initializeYearBalance(employee, type, year, policy) {
+    const existing = await LeaveBalance.findOne({ employee: employee._id, type, year });
+    if (existing) return existing;
+
+    const mode = policy?.availabilityMode || "accrual_only";
+    let allocated = 0;
+
+    if (mode === "front_loaded") {
+        const annual = getAnnualAllocation(employee, policy, new Date(year, 6, 1));
+        allocated = annual[type] || 0;
+
+        // Prorate for mid-year hires
+        if (policy.midYearHireProration) {
+            const hireDate = employee.employeeMeta?.startDate;
+            if (hireDate) {
+                const hire = new Date(hireDate);
+                if (hire.getFullYear() === year) {
+                    const monthsRemaining = 12 - hire.getMonth();
+                    allocated = round(allocated * (monthsRemaining / 12));
+                }
+            }
+        }
+    }
+    // accrual_only and hybrid: allocated starts at 0, accrual engine handles it
+
+    return LeaveBalance.create({
+        employee: employee._id,
+        type,
+        year,
+        allocated,
+        used: 0,
+        pending: 0,
+        carriedOver: 0,
+    });
 }
 
 // ─── Side-effect functions (DB operations) ───────────────────────────────────

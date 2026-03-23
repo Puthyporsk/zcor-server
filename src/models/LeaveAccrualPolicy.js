@@ -44,6 +44,23 @@ const LeaveAccrualPolicySchema = new Schema(
 
         // No accrual during first N calendar days of employment
         waitingPeriodDays: { type: Number, default: 90, min: 0 },
+
+        // How leave hours become available to employees
+        availabilityMode: {
+            type: String,
+            enum: ["front_loaded", "accrual_only", "hybrid"],
+            default: "accrual_only",
+        },
+
+        // (hybrid mode only) Max hours an employee can borrow ahead of accrual
+        maxBorrowAheadHours: {
+            vacation:  { type: Number, default: 0, min: 0 },
+            sick:      { type: Number, default: 0, min: 0 },
+            personal:  { type: Number, default: 0, min: 0 },
+        },
+
+        // (front_loaded mode only) Prorate allocation for mid-year hires
+        midYearHireProration: { type: Boolean, default: true },
     },
     { timestamps: true }
 );
