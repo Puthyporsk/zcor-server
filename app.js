@@ -9,7 +9,6 @@ dotenv.config({ path: join(__dirname, ".env") });
 
 import express from "express";
 import cors from "cors";
-import bodyParser from "body-parser";
 import mongoose from "mongoose";
 import cookieParser from "cookie-parser";
 import helmet from "helmet";
@@ -34,8 +33,7 @@ app.set("view engine", "ejs");
 
 app.use(helmet());
 app.use(express.json({ limit: "10mb" }));
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
+app.use(express.urlencoded({ extended: true, limit: "10mb" }));
 app.use(
   cors({
     origin: ["http://localhost:3000", "https://zcor.org", "https://www.zcor.org"],
@@ -43,13 +41,12 @@ app.use(
   }),
 );
 app.options("*", cors());
-app.use(express.json());
 app.use(cookieParser());
 
 // Rate limiting on auth endpoints
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 15, // 15 attempts per window
+  max: process.env.NODE_ENV === "production" ? 15 : 200,
   message: { message: "Too many attempts. Please try again later." },
   standardHeaders: true,
   legacyHeaders: false,

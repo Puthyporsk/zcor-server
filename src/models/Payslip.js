@@ -93,6 +93,5 @@ const PayslipSchema = new Schema(
 );
 
 PayslipSchema.index({ employee: 1, payPeriod: 1 }, { unique: true });
-PayslipSchema.index({ payPeriod: 1 });
 
 export default mongoose.model("Payslip", PayslipSchema);

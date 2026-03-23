@@ -166,7 +166,7 @@ router.post("/forgot-password", async (req, res, next) => {
       resetToken = user.createPasswordResetToken(30);
       await user.save({ validateBeforeSave: false });
       
-      const base = process.env.FRONTEND_URL || "http://localhost:3000";
+      const base = process.env.FRONTEND_URL || (process.env.NODE_ENV === "production" ? "https://www.zcor.org" : "http://localhost:3000");
       const resetUrl = `${base}/reset-password?token=${encodeURIComponent(resetToken)}`;
 
       try {
@@ -279,7 +279,7 @@ router.post("/register-invited", async (req, res, next) => {
     // Notify the inviter (fire-and-forget — don't block registration)
     if (user.invitedBy) {
       const inviteeName = `${user.firstName} ${user.lastName}`.trim();
-      const dashboardUrl = `${process.env.FRONTEND_URL || "http://localhost:3000"}/dashboard`;
+      const dashboardUrl = `${process.env.FRONTEND_URL || (process.env.NODE_ENV === "production" ? "https://www.zcor.org" : "http://localhost:3000")}/dashboard`;
 
       // In-app notification
       Notification.create({

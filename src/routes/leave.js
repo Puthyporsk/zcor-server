@@ -177,6 +177,28 @@ router.post("/", requireAuth, async (req, res, next) => {
         const parsedHours = parseFloat(totalHours);
         if (isNaN(parsedHours) || parsedHours < 0.25) throw badRequest("totalHours must be at least 0.25");
 
+        // Check for overlapping approved or pending leave
+        const overlap = await LeaveRequest.findOne({
+            employee: req.user._id,
+            status: { $in: ["approved", "pending"] },
+            startDate: { $lte: end },
+            endDate:   { $gte: start },
+        });
+        if (overlap) {
+            throw badRequest("You already have an approved or pending leave request that overlaps with the selected dates");
+        }
+
+        // Validate against available balance
+        const year = start.getFullYear();
+        const balance = await LeaveBalance.findOne({ employee: req.user._id, type, year });
+        const allocated = balance?.allocated || 0;
+        const used      = balance?.used || 0;
+        const pending   = balance?.pending || 0;
+        const available = allocated - used - pending;
+        if (parsedHours > available) {
+            throw badRequest(`Insufficient ${type} leave balance. Available: ${available}h, Requested: ${parsedHours}h`);
+        }
+
         const leaveReq = await LeaveRequest.create({
             employee:   req.user._id,
             type,
@@ -187,7 +209,6 @@ router.post("/", requireAuth, async (req, res, next) => {
         });
 
         // Add to pending balance for this year
-        const year = start.getFullYear();
         await LeaveBalance.findOneAndUpdate(
             { employee: req.user._id, type, year },
             { $inc: { pending: parsedHours } },
@@ -278,6 +299,19 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
         if (leaveReq.endDate < leaveReq.startDate) {
             throw badRequest("endDate must be on or after startDate");
         }
+
+        // Check for overlapping approved or pending leave (exclude this request)
+        const overlap = await LeaveRequest.findOne({
+            _id: { $ne: leaveReq._id },
+            employee: req.user._id,
+            status: { $in: ["approved", "pending"] },
+            startDate: { $lte: leaveReq.endDate },
+            endDate:   { $gte: leaveReq.startDate },
+        });
+        if (overlap) {
+            throw badRequest("You already have an approved or pending leave request that overlaps with the selected dates");
+        }
+
         if (totalHours !== undefined) {
             const h = parseFloat(totalHours);
             if (isNaN(h) || h < 0.25) throw badRequest("totalHours must be at least 0.25");
@@ -323,7 +357,8 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
 
 /**
  * DELETE /api/leave/:id
- * Cancel a pending leave request. Only the request owner.
+ * Delete a leave request. Only the request owner.
+ * Adjusts balances based on current status before removing.
  */
 router.delete("/:id", requireAuth, async (req, res, next) => {
     try {
@@ -333,25 +368,29 @@ router.delete("/:id", requireAuth, async (req, res, next) => {
         if (!leaveReq) throw notFound("Request not found");
 
         if (!leaveReq.employee.equals(req.user._id)) {
-            throw forbidden("You can only cancel your own requests");
-        }
-        if (leaveReq.status !== "pending") {
-            throw badRequest("Only pending requests can be cancelled");
+            throw forbidden("You can only delete your own requests");
         }
 
-        const { type, totalHours, startDate } = leaveReq;
+        const { type, totalHours, startDate, status } = leaveReq;
         const year = startDate.getFullYear();
 
-        leaveReq.status = "cancelled";
-        await leaveReq.save();
+        // Return hours to balance based on status
+        if (status === "pending") {
+            await LeaveBalance.findOneAndUpdate(
+                { employee: req.user._id, type, year },
+                [{ $set: { pending: { $max: [0, { $subtract: ["$pending", totalHours] }] } } }]
+            );
+        } else if (status === "approved") {
+            await LeaveBalance.findOneAndUpdate(
+                { employee: req.user._id, type, year },
+                [{ $set: { used: { $max: [0, { $subtract: ["$used", totalHours] }] } } }]
+            );
+        }
+        // denied/cancelled — no balance adjustment needed
 
-        // Release the pending hours (clamped to 0)
-        await LeaveBalance.findOneAndUpdate(
-            { employee: req.user._id, type, year },
-            [{ $set: { pending: { $max: [0, { $subtract: ["$pending", totalHours] }] } } }]
-        );
+        await leaveReq.deleteOne();
 
-        return res.json({ message: "Request cancelled" });
+        return res.json({ message: "Request deleted" });
     } catch (err) {
         next(err);
     }
