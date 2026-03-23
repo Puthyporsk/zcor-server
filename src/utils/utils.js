@@ -92,7 +92,8 @@ function makeTransport() {
 
 async function sendMail({ to, subject, html, text }) {
   const transport = makeTransport();
-  const from = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
+  const from = `ZCOR <${fromAddr}>`;
 
   return transport.sendMail({
     from,

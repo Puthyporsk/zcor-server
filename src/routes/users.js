@@ -92,7 +92,7 @@ router.post("/", requireAuth, requireRole("owner", "manager"), async (req, res, 
       { expiresIn: "7d" }
     );
 
-    const base = process.env.FRONTEND_URL || "http://localhost:3000";
+    const base = process.env.FRONTEND_URL || (process.env.NODE_ENV === "production" ? "https://www.zcor.org" : "http://localhost:3000");
     const inviteUrl = `${base}/signup?invite=${encodeURIComponent(token)}`;
 
     const inviterName = `${req.user.firstName} ${req.user.lastName}`.trim();
