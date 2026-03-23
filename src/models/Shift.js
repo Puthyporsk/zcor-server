@@ -27,6 +27,5 @@ const ShiftSchema = new Schema(
 );
 
 ShiftSchema.index({ employee: 1, date: 1 });
-ShiftSchema.index({ date: 1 });
 
 export default mongoose.model("Shift", ShiftSchema);
