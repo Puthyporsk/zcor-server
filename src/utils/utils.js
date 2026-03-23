@@ -146,7 +146,7 @@ async function sendMail({ to, subject, html, text }) {
   const fromAddr = process.env.SMTP_FROM || process.env.SMTP_USER;
 
   return transport.sendMail({
-    from: { name: "ZCOR", address: fromAddr },
+    from: `ZCOR <${fromAddr}>`,
     to,
     subject,
     text,
