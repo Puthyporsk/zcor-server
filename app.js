@@ -29,6 +29,7 @@ import notificationsRouter from "./src/routes/notifications.js";
 import Notification from "./src/models/Notification.js";
 
 const app = express();
+app.set("trust proxy", 1);
 app.set("view engine", "ejs");
 
 app.use(helmet());
