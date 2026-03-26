@@ -141,7 +141,7 @@ function makeTransport() {
   });
 }
 
-async function sendMail({ to, subject, html, text }) {
+export async function sendMail({ to, subject, html, text, replyTo }) {
   const transport = makeTransport();
   const rawFrom = (process.env.SMTP_FROM || process.env.SMTP_USER).replace(/^"|"$/g, "");
   const from = rawFrom.includes("<") ? rawFrom : `ZCOR <${rawFrom}>`;
@@ -152,5 +152,6 @@ async function sendMail({ to, subject, html, text }) {
     subject,
     text,
     html,
+    ...(replyTo && { replyTo }),
   });
 }

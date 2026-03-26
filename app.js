@@ -26,6 +26,7 @@ import leaveRouter from "./src/routes/leave.js";
 import payrollRouter from "./src/routes/payroll.js";
 import leavePolicyRouter from "./src/routes/leavePolicy.js";
 import notificationsRouter from "./src/routes/notifications.js";
+import contactRouter from "./src/routes/contact.js";
 import Notification from "./src/models/Notification.js";
 
 const app = express();
@@ -72,6 +73,7 @@ app.use("/api/leave", leaveRouter);
 app.use("/api/payroll", payrollRouter);
 app.use("/api/leave-policy", leavePolicyRouter);
 app.use("/api/notifications", notificationsRouter);
+app.use("/api/contact", contactRouter);
 
 // error handler AFTER routes
 app.use((err, _req, res, _next) => {
