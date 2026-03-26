@@ -24,6 +24,7 @@ function entryResponse(entry) {
         reviewedBy:  entry.reviewedBy  || null,
         reviewedAt:  entry.reviewedAt  || null,
         reviewNote:  entry.reviewNote  || "",
+        entryMethod: entry.entryMethod || "manual",
         user:        entry.user,
         createdAt:   entry.createdAt,
         updatedAt:   entry.updatedAt,
