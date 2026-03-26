@@ -51,6 +51,13 @@ const TimeEntrySchema = new Schema(
         reviewedBy:  { type: Schema.Types.ObjectId, ref: "User" },
         reviewedAt:  { type: Date },
         reviewNote:  { type: String, trim: true, maxlength: 500 },
+
+        // How the entry was created
+        entryMethod: {
+            type: String,
+            enum: ["manual", "clock"],
+            default: "manual",
+        },
     },
     {
         timestamps: true, // adds createdAt, updatedAt
