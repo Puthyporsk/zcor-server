@@ -298,6 +298,7 @@ router.patch("/:id/submit", requireAuth, async (req, res, next) => {
             title: "Time Entry Submitted",
             message: `${submitterName} submitted a time entry for review.`,
             relatedEntity: { kind: "TimeEntry", item: entry._id },
+            createdBy: req.user._id,
         });
 
         await entry.populate("project", "name");
@@ -346,6 +347,7 @@ router.patch("/:id/review", requireAuth, requireRole("owner", "manager"), async 
             title: `Time Entry ${action === "approve" ? "Approved" : "Rejected"}`,
             message: `${reviewerName} ${statusLabel} your time entry.${reviewNote ? ` Note: ${reviewNote}` : ""}`,
             relatedEntity: { kind: "TimeEntry", item: entry._id },
+            createdBy: req.user._id,
         });
 
         await entry.populate("reviewedBy", "firstName lastName userId");

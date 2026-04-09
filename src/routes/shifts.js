@@ -149,16 +149,15 @@ router.post("/", requireAuth, requireRole("owner", "manager"), async (req, res, 
         const creatorName = `${req.user.firstName} ${req.user.lastName}`.trim();
         // Use the raw date string to avoid timezone shifts from new Date() UTC parsing
         const dateStr = String(date).slice(0, 10);
-        if (!shift.employee._id.equals(req.user._id)) {
-            notifyUser({
-                recipient: employeeId,
-                type: "shift_assigned",
-                title: "New Shift Assigned",
-                message: `${creatorName} assigned you a shift on ${dateStr} (${startTime}–${endTime}).`,
-                relatedEntity: { kind: "Shift", item: shift._id },
-                metadata: { date: dateStr },
-            });
-        }
+        notifyUser({
+            recipient: employeeId,
+            type: "shift_assigned",
+            title: "New Shift Assigned",
+            message: `${creatorName} assigned you a shift on ${dateStr} (${startTime}–${endTime}).`,
+            relatedEntity: { kind: "Shift", item: shift._id },
+            metadata: { date: dateStr },
+            createdBy: req.user._id,
+        });
 
         return res.status(201).json(shiftResponse(shift));
     } catch (err) {
@@ -179,11 +178,10 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
         const shift = await Shift.findById(req.params.id);
         if (!shift) throw notFound("Shift not found");
 
-        const isPrivileged      = ["owner", "manager"].includes(req.user.role);
-        const isAssignedEmployee = shift.employee.equals(req.user._id);
+        const isPrivileged = ["owner", "manager"].includes(req.user.role);
 
-        if (!isPrivileged && !isAssignedEmployee) {
-            throw forbidden("You can only edit your own shifts");
+        if (!isPrivileged) {
+            throw forbidden("Only managers and owners can edit shifts");
         }
 
         const { startTime, endTime, taskId, notes } = req.body || {};
@@ -232,7 +230,7 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
 
         // Notify the assigned employee if a manager/owner edited their shift
         const isPrivilegedEditor = ["owner", "manager"].includes(req.user.role);
-        if (isPrivilegedEditor && !shift.employee._id.equals(req.user._id)) {
+        if (isPrivilegedEditor) {
             const editorName = `${req.user.firstName} ${req.user.lastName}`.trim();
             // Use ISO string slice to get YYYY-MM-DD in UTC (matches how the date was stored)
             const updatedDateStr = shift.date.toISOString().slice(0, 10);
@@ -243,6 +241,7 @@ router.patch("/:id", requireAuth, async (req, res, next) => {
                 message: `${editorName} updated your shift on ${updatedDateStr}.`,
                 relatedEntity: { kind: "Shift", item: shift._id },
                 metadata: { date: updatedDateStr },
+                createdBy: req.user._id,
             });
         }
 

@@ -245,6 +245,7 @@ router.post("/", requireAuth, async (req, res, next) => {
             title: "Leave Request Submitted",
             message: `${requesterName} submitted a ${type} leave request.`,
             relatedEntity: { kind: "LeaveRequest", item: leaveReq._id },
+            createdBy: req.user._id,
         });
 
         return res.status(201).json(requestResponse(leaveReq));
@@ -510,6 +511,7 @@ router.patch("/:id/review", requireAuth, requireRole("owner", "manager"), async 
             title: `Leave Request ${action === "approve" ? "Approved" : "Denied"}`,
             message: `${reviewerName} ${leaveStatus} your ${type} leave request.${reviewNote ? ` Note: ${reviewNote}` : ""}`,
             relatedEntity: { kind: "LeaveRequest", item: leaveReq._id },
+            createdBy: req.user._id,
         });
 
         return res.json(requestResponse(leaveReq));
