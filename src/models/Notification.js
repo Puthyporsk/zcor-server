@@ -35,6 +35,7 @@ const NotificationSchema = new Schema(
       item: { type: Schema.Types.ObjectId },
     },
     metadata: { type: Schema.Types.Mixed },
+    createdBy: { type: Schema.Types.ObjectId, ref: "User", default: null },
     deletedAt: { type: Date, default: null },
   },
   { timestamps: true }
