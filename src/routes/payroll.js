@@ -75,7 +75,24 @@ async function getApprovedHours(employeeId, startDate, endDate) {
 }
 
 /**
+ * Count weekday (Mon–Fri) days between two dates inclusive.
+ */
+function countBusinessDays(start, end) {
+    let count = 0;
+    const d = new Date(start);
+    const last = new Date(end);
+    while (d <= last) {
+        const day = d.getUTCDay(); // 0=Sun, 6=Sat
+        if (day !== 0 && day !== 6) count++;
+        d.setUTCDate(d.getUTCDate() + 1);
+    }
+    return count;
+}
+
+/**
  * Get approved paid leave hours for an employee in a date range.
+ * Pro-rates hours based on business days (Mon–Fri) when a leave request
+ * only partially overlaps the period.
  */
 async function getPaidLeaveHours(employeeId, startDate, endDate) {
     const requests = await LeaveRequest.find({
@@ -86,7 +103,28 @@ async function getPaidLeaveHours(employeeId, startDate, endDate) {
         endDate: { $gte: startDate },
     });
 
-    return requests.reduce((sum, r) => sum + (r.totalHours || 0), 0);
+    let total = 0;
+    for (const r of requests) {
+        const leaveStart = new Date(r.startDate);
+        const leaveEnd = new Date(r.endDate);
+        const periodStart = new Date(startDate);
+        const periodEnd = new Date(endDate);
+
+        // Total business days of the leave request
+        const totalBizDays = countBusinessDays(leaveStart, leaveEnd);
+        if (totalBizDays === 0) continue;
+
+        // Overlapping portion: clamp leave range to the pay period
+        const overlapStart = leaveStart > periodStart ? leaveStart : periodStart;
+        const overlapEnd = leaveEnd < periodEnd ? leaveEnd : periodEnd;
+        const overlapBizDays = countBusinessDays(overlapStart, overlapEnd);
+
+        if (overlapBizDays > 0) {
+            total += (r.totalHours || 0) * (overlapBizDays / totalBizDays);
+        }
+    }
+
+    return Math.round(total * 100) / 100;
 }
 
 /**
@@ -343,7 +381,7 @@ router.patch(
                 title: "Pay Period Updated",
                 message: `${actorName} moved pay period ${periodLabel} to "${period.status}".`,
                 relatedEntity: { kind: "PayPeriod", item: period._id },
-                excludeUserId: req.user._id,
+                createdBy: req.user._id,
             });
 
             // Notify employees when payslips become visible (approved or paid)
@@ -356,6 +394,7 @@ router.patch(
                         title: action === "pay" ? "Payslip Paid" : "Payslip Available",
                         message: `Your payslip for ${periodLabel} is now ${action === "pay" ? "marked as paid" : "available to view"}.`,
                         relatedEntity: { kind: "Payslip", item: ps._id },
+                        createdBy: req.user._id,
                     });
                 }
             }
